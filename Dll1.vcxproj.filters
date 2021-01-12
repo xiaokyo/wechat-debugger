@@ -34,7 +34,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Dll1.rc">
+    <ResourceCompile Include="MAIN.rc">
       <Filter>资源文件</Filter>
     </ResourceCompile>
   </ItemGroup>

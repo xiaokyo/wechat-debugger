@@ -3,18 +3,26 @@
 #include "resource.h"
 #include <stdio.h>
 #include <atlimage.h>
+#include <string>
+#include <tchar.h>
+#include <iostream>
 
 // 全局变量
 BYTE backCode[5] = {0};
 HWND global_hDlg;
+DWORD recvMessageCall = { 0 };
+DWORD jumpBackAdd = { 0 };
 
 // 声明
 DWORD getWechatWin();
 void showPic();
 void saveImg(DWORD QR,DWORD ECX);
-void startHook(DWORD hookA, LPVOID funAdd);
+void startHook(DWORD hookAdd,DWORD recvAdd, LPVOID funAdd);
 void unHook(DWORD hookA);
+DWORD WINAPI ThreadProc(HMODULE hDlg);
 INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
+LPCWSTR GetMsgByAddress(DWORD memAddress);
+void messageListen();
 
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
@@ -24,7 +32,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
-        DialogBox(hModule, MAKEINTRESOURCE(MAIN), NULL, &dialogCallBack);
+        // 创建了一个线程防止卡住主线程
+        CreateThread(NULL,0, (LPTHREAD_START_ROUTINE)ThreadProc, hModule,0,NULL);
+        break;
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
     case DLL_PROCESS_DETACH:
@@ -33,6 +43,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     return TRUE;
 }
 
+DWORD WINAPI ThreadProc(HMODULE hDlg) {
+    DialogBox(hDlg, MAKEINTRESOURCE(MAIN), NULL, &dialogCallBack);
+    return FALSE;
+}
 
 // 消息处理程序。
 INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
@@ -43,20 +57,13 @@ INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
     switch (message)
     {
     case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
-
+        break;
     case WM_COMMAND:
-        if (wParam == HOOK) {
-            // start hook wechat QRCode
-            startHook(0x5717BA, showPic);
-            SetDlgItemText(global_hDlg, HOOK_STATUS, "已经hook");
+        if (wParam == HOOK_LISTEN) {
+            // hook 监听消息的call
+            startHook(0x46560F, 0x45D5D0, messageListen);
         }
 
-        if (wParam == UN_HOOK) {
-            // unmount hook
-            unHook(0x5717BA);
-            SetDlgItemText(global_hDlg, HOOK_STATUS, "已卸载hook");
-        }
         break;
     }
     return (INT_PTR)FALSE;
@@ -65,7 +72,7 @@ INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
 // get WeChatWin.dll ADD
 DWORD getWechatWin()
 {
-    return (DWORD)LoadLibrary("WeChatWin.dll");
+    return (DWORD)LoadLibrary(L"WeChatWin.dll");
 }
 
 void saveImg(DWORD QR,DWORD qrEcx) {
@@ -74,12 +81,10 @@ void saveImg(DWORD QR,DWORD qrEcx) {
     char PicData[0xFFF] = { 0 };
     size_t cpyLen = (size_t) *((LPVOID*)picLen); // 获取地址里值 
     
-    //MessageBox(global_hDlg, "hook 图片到了", "hook tips" , MB_OKCANCEL);
-
     memcpy(PicData, *((LPVOID*)qrEcx), cpyLen); // 拷贝文件
     FILE * pFile;
 
-    fopen_s(&pFile, "qrcode1.png", "wb");
+    fopen_s(&pFile, "qrcode.png", "wb");
     fwrite(PicData, sizeof(char), sizeof(PicData), pFile);
     fclose(pFile);
 
@@ -88,7 +93,7 @@ void saveImg(DWORD QR,DWORD qrEcx) {
     HWND PicHan = GetDlgItem(global_hDlg, QR_CODE);
     GetClientRect(PicHan, &rect);
 
-    img.Load("qrcode1.png");
+    img.Load(L"qrcode.png");
     img.Draw(GetDC(PicHan), rect);
 }
 
@@ -117,7 +122,6 @@ void __declspec(naked) showPic()
     }
 
     saveImg(pEax, pEcx);
-    retAdd = getWechatWin() + 0x5717BF;
 
     // 恢复寄存器
     _asm {
@@ -133,10 +137,61 @@ void __declspec(naked) showPic()
     }
 }
 
+
+//读取内存中的字符串
+//存储格式
+//xxxxxxxx:字符串地址（memAddress）
+//xxxxxxxx:字符串长度（memAddress +4）
+LPCWSTR GetMsgByAddress(DWORD memAddress)
+{
+    //获取字符串长度
+    DWORD msgLength = *(DWORD*)(memAddress + 4);
+    if (msgLength == 0)
+    {
+        WCHAR* msg = new WCHAR[1];
+        msg[0] = 0;
+        return msg;
+    }
+
+    WCHAR* msg = new WCHAR[msgLength + 1];
+    ZeroMemory(msg, msgLength + 1);
+
+    //复制内容
+    wmemcpy_s(msg, msgLength + 1, (WCHAR*)(*(DWORD*)memAddress), msgLength + 1);
+    return msg;
+}
+
+void handleMessage(DWORD esp) {
+    DWORD* msgAddress = (DWORD*)(esp + 0x8);
+    //wstring wxid = GetMsgByAddress(*msgAddress + 0x40);
+}
+
+DWORD esp_i = 0;
+void __declspec(naked) messageListen() {
+    __asm {
+        mov esp_i,esp
+        call recvMessageCall
+
+        pushad
+    }
+
+    // 处理消息
+    handleMessage(esp_i);
+
+    __asm {
+        popad
+
+        jmp jumpBackAdd
+    }
+
+}
+
 // start hook
-void startHook(DWORD hookA, LPVOID funAdd) {
+void startHook(DWORD hookAddress, DWORD recvAdd, LPVOID funAdd){
     DWORD WeAdd = getWechatWin();
-    DWORD hookAdd = WeAdd + hookA;
+    DWORD hookAdd = WeAdd + hookAddress;
+    recvMessageCall = WeAdd + recvAdd;
+    jumpBackAdd = hookAdd + 5;
 
     // jmp code
     BYTE jmpCode[5] = {0};
@@ -147,14 +202,14 @@ void startHook(DWORD hookA, LPVOID funAdd) {
     HANDLE cHandle = OpenProcess(PROCESS_ALL_ACCESS, NULL, GetCurrentProcessId());
     if (ReadProcessMemory(cHandle, (LPCVOID)hookAdd, backCode, 5, NULL) == 0)
     {
-        MessageBox(NULL, "读取内存数据失败", "错误", 0);
+        MessageBox(NULL, L"读取内存数据失败", L"错误", 0);
         return;
     }
 
     // 写入我们组好的数据
     if (WriteProcessMemory(cHandle, (LPVOID)hookAdd, jmpCode, 5, NULL) == 0)
     {
-        MessageBox(NULL, "写入内存数据失败", "错误", 0);
+        MessageBox(NULL, L"写入内存数据失败", L"错误", 0);
         return;
     }
 }
@@ -167,7 +222,7 @@ void unHook(DWORD hookA) {
     HANDLE cHandle = OpenProcess(PROCESS_ALL_ACCESS, NULL, GetCurrentProcessId());
     if (WriteProcessMemory(cHandle, (LPVOID)hookAdd, backCode, 5, NULL) == 0)
     {
-        MessageBox(NULL, "写入内存数据失败", "错误", 0);
+        MessageBox(NULL, L"写入内存数据失败", L"错误", 0);
         return;
     }
 }
