@@ -162,6 +162,11 @@ LPCWSTR GetMsgByAddress(DWORD memAddress)
 }
 
 void handleMessage(DWORD esp) {
+    /*
+        wxid  [esp+8] + 0x40
+        消息内容  [esp+8] + 0x68
+        群消息时候的 [esp+8] + 0x12C
+    */
     DWORD* msgAddress = (DWORD*)(esp + 0x8);
     //wstring wxid = GetMsgByAddress(*msgAddress + 0x40);
 }
