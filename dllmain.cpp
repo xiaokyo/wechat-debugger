@@ -7,6 +7,8 @@
 #include <tchar.h>
 #include <iostream>
 
+using namespace std;
+
 // 全局变量
 BYTE backCode[5] = {0};
 HWND global_hDlg;
@@ -23,6 +25,7 @@ DWORD WINAPI ThreadProc(HMODULE hDlg);
 INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 LPCWSTR GetMsgByAddress(DWORD memAddress);
 void messageListen();
+char* UnicodeToUtf8(wchar_t* unicode);
 
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
@@ -61,7 +64,7 @@ INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
     case WM_COMMAND:
         if (wParam == HOOK_LISTEN) {
             // hook 监听消息的call
-            startHook(0x46560F, 0x45D5D0, messageListen);
+            startHook(0x3A89DB, 0x3A48B0, messageListen);
         }
 
         break;
@@ -161,31 +164,51 @@ LPCWSTR GetMsgByAddress(DWORD memAddress)
     return msg;
 }
 
-void handleMessage(DWORD esp) {
-    /*
-        wxid  [esp+8] + 0x40
-        消息内容  [esp+8] + 0x68
-        群消息时候的 [esp+8] + 0x12C
-    */
-    DWORD* msgAddress = (DWORD*)(esp + 0x8);
-    //wstring wxid = GetMsgByAddress(*msgAddress + 0x40);
+/*
+编码转换
+ */
+char* UnicodeToUtf8(wchar_t* unicode)
+{
+    int len;
+    len = WideCharToMultiByte(CP_UTF8, 0, unicode, -1, NULL, 0, NULL, NULL);
+    char* szUtf8 = (char*)malloc(len + 1);
+    if (szUtf8 != 0) {
+        memset(szUtf8, 0, len + 1);
+    }
+    WideCharToMultiByte(CP_UTF8, 0, unicode, -1, szUtf8, len, NULL, NULL);
+    return szUtf8;
 }
 
-DWORD esp_i = 0;
+void handleMessage(DWORD eax) {
+    /*
+    wxid  [eax] + 0x40
+    消息内容  [eax] + 0x68
+    群消息时候的 [eax] + 0x12C
+    */
+    DWORD** msgAddress = (DWORD**)eax;
+    wstring wxid = GetMsgByAddress(**msgAddress + 0x40);
+    char buffer[0x100] = {""};
+    sprintf_s(buffer,0x100, "%s", UnicodeToUtf8((wchar_t*)wxid.c_str()));
+    MessageBox(NULL, (LPCWSTR)buffer, L"wxid", 0);
+}
+
+DWORD eax_i = 0;
 void __declspec(naked) messageListen() {
     __asm {
-        mov esp_i,esp
-        call recvMessageCall
-
+        mov eax_i,eax
         pushad
+        pushf
     }
 
     // 处理消息
-    handleMessage(esp_i);
+    handleMessage(eax_i);
 
     __asm {
+        popf
         popad
-
+      
+        push eax
+        call recvMessageCall
         jmp jumpBackAdd
     }
 
