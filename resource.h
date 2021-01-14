@@ -11,6 +11,8 @@
 #define BTN_HOOK                        1003
 #define HOOK_LISTEN                     1003
 #define QR_CODE                         1004
+#define HOOK_LISTEN2                    1004
+#define UNHOOK_LISTEN                   1004
 #define IDC_EDIT1                       1005
 #define ID_MSG_EDIT                     1006
 #define RECIEVE_INPUT                   1008

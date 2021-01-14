@@ -67,6 +67,11 @@ INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM l
             startHook(0x3A89DB, 0x3A48B0, messageListen);
         }
 
+        if (wParam == UNHOOK_LISTEN) {
+            // 卸载监听hook按钮
+            unHook(0x3A89DB);
+        }
+
         break;
     }
     return (INT_PTR)FALSE;
