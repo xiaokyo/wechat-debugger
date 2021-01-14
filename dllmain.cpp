@@ -127,12 +127,11 @@ void handleMessage(DWORD eax) {
     消息内容  [eax] + 0x68
     群消息时候的 [eax] + 0x12C
     */
-    DWORD* msgAddress = (DWORD*)eax;
-    wstring wxid = GetMsgByAddress(*msgAddress + 0x40);
-
-    char buffer[0xFFF] = {0};
-    sprintf_s(buffer, 0xFFF, "%s", UnicodeToUtf8((wchar_t*)wxid.c_str()));
-    //MessageBox(NULL, (LPCWSTR)buffer, L"wxid", 0);
+    DWORD* msgAddress = (DWORD *)eax;
+    char wxid[0xFFF] = {0};
+    memcpy_s(wxid, sizeof(wxid),(DWORD*)(*msgAddress + 0x40), 0x100);
+    char buffer[0x100] = {"\0"};
+    sprintf_s(buffer, 0x100, "%s", wxid);
     SetDlgItemText(global_hDlg, RECIEVE_INPUT, (LPCWSTR)buffer);
 }
 
