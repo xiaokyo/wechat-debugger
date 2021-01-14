@@ -17,14 +17,12 @@ DWORD jumpBackAdd = { 0 };
 
 // 声明
 DWORD getWechatWin();
-void showPic();
-void saveImg(DWORD QR,DWORD ECX);
 void startHook(DWORD hookAdd,DWORD recvAdd, LPVOID funAdd);
 void unHook(DWORD hookA);
 DWORD WINAPI ThreadProc(HMODULE hDlg);
 INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
-LPCWSTR GetMsgByAddress(DWORD memAddress);
 void messageListen();
+LPCWSTR GetMsgByAddress(DWORD memAddress);
 char* UnicodeToUtf8(wchar_t* unicode);
 
 BOOL APIENTRY DllMain( HMODULE hModule,
@@ -83,68 +81,21 @@ DWORD getWechatWin()
     return (DWORD)LoadLibrary(L"WeChatWin.dll");
 }
 
-void saveImg(DWORD QR,DWORD qrEcx) {
-    errno_t err;
-    DWORD picLen = qrEcx + 0x4;
-    char PicData[0xFFF] = { 0 };
-    size_t cpyLen = (size_t) *((LPVOID*)picLen); // 获取地址里值 
-    
-    memcpy(PicData, *((LPVOID*)qrEcx), cpyLen); // 拷贝文件
-    FILE * pFile;
 
-    fopen_s(&pFile, "qrcode.png", "wb");
-    fwrite(PicData, sizeof(char), sizeof(PicData), pFile);
-    fclose(pFile);
-
-    CImage img;
-    CRect rect;
-    HWND PicHan = GetDlgItem(global_hDlg, QR_CODE);
-    GetClientRect(PicHan, &rect);
-
-    img.Load(L"qrcode.png");
-    img.Draw(GetDC(PicHan), rect);
-}
-
-// show QRCODE
-DWORD pEax = 0;
-DWORD pEcx = 0;
-DWORD pEdx = 0;
-DWORD pEbx = 0;
-DWORD pEbp = 0;
-DWORD pEsp = 0;
-DWORD pEsi = 0;
-DWORD pEdi = 0;
-DWORD retAdd = 0;
-void __declspec(naked) showPic()
+/*
+编码转换
+ */
+char* UnicodeToUtf8(wchar_t* unicode)
 {
-    // 备份寄存器
-    _asm {
-        mov pEax,eax
-        mov pEcx,ecx
-        mov pEdx,edx
-        mov pEbx,ebx
-        mov pEsp,esp
-        mov pEbp,ebp
-        mov pEsi,esi
-        mov pEdi,edi
+    int len;
+    len = WideCharToMultiByte(CP_UTF8, 0, unicode, -1, NULL, 0, NULL, NULL);
+    char* szUtf8 = (char*)malloc(len + 1);
+    if (szUtf8 != 0) {
+        memset(szUtf8, 0, len + 1);
     }
-
-    saveImg(pEax, pEcx);
-
-    // 恢复寄存器
-    _asm {
-        mov  eax,pEax
-        mov  ecx,pEcx
-        mov  edx,pEdx
-        mov  ebx,pEbx
-        mov  esp,pEsp
-        mov  ebp,pEbp
-        mov  esi,pEsi
-        mov  edi,pEdi
-        jmp retAdd
-    }
+    WideCharToMultiByte(CP_UTF8, 0, unicode, -1, szUtf8, len, NULL, NULL);
+    return szUtf8;
 }
-
 
 //读取内存中的字符串
 //存储格式
@@ -169,32 +120,20 @@ LPCWSTR GetMsgByAddress(DWORD memAddress)
     return msg;
 }
 
-/*
-编码转换
- */
-char* UnicodeToUtf8(wchar_t* unicode)
-{
-    int len;
-    len = WideCharToMultiByte(CP_UTF8, 0, unicode, -1, NULL, 0, NULL, NULL);
-    char* szUtf8 = (char*)malloc(len + 1);
-    if (szUtf8 != 0) {
-        memset(szUtf8, 0, len + 1);
-    }
-    WideCharToMultiByte(CP_UTF8, 0, unicode, -1, szUtf8, len, NULL, NULL);
-    return szUtf8;
-}
-
+// 处理监听获取的消息
 void handleMessage(DWORD eax) {
     /*
     wxid  [eax] + 0x40
     消息内容  [eax] + 0x68
     群消息时候的 [eax] + 0x12C
     */
-    DWORD** msgAddress = (DWORD**)eax;
-    wstring wxid = GetMsgByAddress(**msgAddress + 0x40);
-    char buffer[0x100] = {""};
-    sprintf_s(buffer,0x100, "%s", UnicodeToUtf8((wchar_t*)wxid.c_str()));
-    MessageBox(NULL, (LPCWSTR)buffer, L"wxid", 0);
+    DWORD* msgAddress = (DWORD*)eax;
+    wstring wxid = GetMsgByAddress(*msgAddress + 0x40);
+
+    char buffer[0xFFF] = {0};
+    sprintf_s(buffer, 0xFFF, "%s", UnicodeToUtf8((wchar_t*)wxid.c_str()));
+    //MessageBox(NULL, (LPCWSTR)buffer, L"wxid", 0);
+    SetDlgItemText(global_hDlg, RECIEVE_INPUT, (LPCWSTR)buffer);
 }
 
 DWORD eax_i = 0;
@@ -202,16 +141,13 @@ void __declspec(naked) messageListen() {
     __asm {
         mov eax_i,eax
         pushad
-        pushf
     }
 
     // 处理消息
     handleMessage(eax_i);
 
     __asm {
-        popf
         popad
-      
         push eax
         call recvMessageCall
         jmp jumpBackAdd
