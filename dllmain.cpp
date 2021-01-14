@@ -22,8 +22,6 @@ void unHook(DWORD hookA);
 DWORD WINAPI ThreadProc(HMODULE hDlg);
 INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 void messageListen();
-LPCWSTR GetMsgByAddress(DWORD memAddress);
-char* UnicodeToUtf8(wchar_t* unicode);
 
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
@@ -52,7 +50,6 @@ DWORD WINAPI ThreadProc(HMODULE hDlg) {
 // 消息处理程序。
 INT_PTR CALLBACK dialogCallBack(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-
     global_hDlg = hDlg;
 
     switch (message)
@@ -81,45 +78,6 @@ DWORD getWechatWin()
     return (DWORD)LoadLibrary(L"WeChatWin.dll");
 }
 
-
-/*
-编码转换
- */
-char* UnicodeToUtf8(wchar_t* unicode)
-{
-    int len;
-    len = WideCharToMultiByte(CP_UTF8, 0, unicode, -1, NULL, 0, NULL, NULL);
-    char* szUtf8 = (char*)malloc(len + 1);
-    if (szUtf8 != 0) {
-        memset(szUtf8, 0, len + 1);
-    }
-    WideCharToMultiByte(CP_UTF8, 0, unicode, -1, szUtf8, len, NULL, NULL);
-    return szUtf8;
-}
-
-//读取内存中的字符串
-//存储格式
-//xxxxxxxx:字符串地址（memAddress）
-//xxxxxxxx:字符串长度（memAddress +4）
-LPCWSTR GetMsgByAddress(DWORD memAddress)
-{
-    //获取字符串长度
-    DWORD msgLength = *(DWORD*)(memAddress + 4);
-    if (msgLength == 0)
-    {
-        WCHAR* msg = new WCHAR[1];
-        msg[0] = 0;
-        return msg;
-    }
-
-    WCHAR* msg = new WCHAR[msgLength + 1];
-    ZeroMemory(msg, msgLength + 1);
-
-    //复制内容
-    wmemcpy_s(msg, msgLength + 1, (WCHAR*)(*(DWORD*)memAddress), msgLength + 1);
-    return msg;
-}
-
 // 处理监听获取的消息
 void handleMessage(DWORD eax) {
     /*
@@ -127,11 +85,11 @@ void handleMessage(DWORD eax) {
     消息内容  [eax] + 0x68
     群消息时候的 [eax] + 0x12C
     */
-    wchar_t* wxid = *(wchar_t**)(*(DWORD*)eax + 0x40);
-    wchar_t* msg = *(wchar_t **)(*(DWORD *)eax + 0x68);
+    wchar_t *wxid = *(wchar_t**)(*(DWORD*)eax + 0x40);
+    wchar_t *msg = *(wchar_t**)(*(DWORD*)eax + 0x68);
     WCHAR wxidText[0x8192] = { 0 };
     swprintf_s(wxidText, L"wxid: %s => 消息内容:%s", wxid, msg);
-    SetDlgItemText(global_hDlg, RECIEVE_INPUT,(LPWSTR)wxidText);
+    SetDlgItemText(global_hDlg, RECIEVE_INPUT, wxidText);
 }
 
 DWORD eax_i = 0;
